@@ -1021,18 +1021,19 @@ public class OrderService
                             .Where(od => !od.RemoveFromViewFlag) // JT METHOD
                             .OrderBy(od => od.Name) //JT METHOD
                             .ToList(),
-                            //The question is how to get the subtotal 
-                            // sub total is the sum of price * quantity * (1 - discount) Discount  in (decimal) always
-                            // SubTotal = sum of (price * qty * (1 - discount))
+            //The question is how to get the subtotal 
+            // sub total is the sum of price * quantity * (1 - discount) Discount  in (decimal) always
+            // SubTotal = sum of (price * qty * (1 - discount))
                             SubTotal = o.OrderDetails
                                 .Where(od => !od.RemoveFromViewFlag)
-                                .Sum(od => od.UnitPrice * od.Quantity * (decimal)(1 - od.Discount)),
-                
+                                .Sum(od => od.UnitPrice * od.Quantity),
+                                
+
                             // Tax = 5% of subtotal
                             Tax = o.OrderDetails
                                 .Where(od => !od.RemoveFromViewFlag)
-                                .Sum(od => od.UnitPrice * od.Quantity * (decimal)(1 - od.Discount)) * 0.05m,
-                    RemoveFromViewFlag = o.RemoveFromViewFlag,
+                                .Sum(od => od.UnitPrice * od.Quantity) * 0.05m,
+                                RemoveFromViewFlag = o.RemoveFromViewFlag
         }).FirstOrDefault();
 
         //If no order found
@@ -1050,7 +1051,7 @@ public class OrderService
 
 
     public Result<OrderView> AddEditOrder(OrderView orderView)
-    {
+     {
         var result = new Result<OrderView>();
 
         //Validation check 
@@ -1197,7 +1198,10 @@ public class OrderService
         //UnitsInStock
         //is reduced.
 
-
+        decimal subTotal = 0;
+        decimal tax = 0;
+        
+        
         foreach (var orderDetailView in orderView.OrderDetails)
         {
             //LOOKING UP DETAILS IN THE DB 
@@ -1212,13 +1216,28 @@ public class OrderService
             {
                 detail = new OrderDetails();
                 detail.ProductID = orderDetailView.ProductID;
+                // reduce stock for new details only
+                var product = _context.Products
+                    .Where(p => p.ProductID == orderDetailView.ProductID)
+                    .FirstOrDefault();
+                if (product != null)
+                {
+                    product.UnitsInStock -= orderDetailView.Quantity;
+                    _context.Products.Update(product);
+                }
+                
+                
+                
             }
+            
+            //subTotal += (detail.UnitPrice ?? 0) * detail.Quantity;
              // update properties from the view model
             detail.UnitPrice = orderDetailView.UnitPrice;
             detail.Quantity = orderDetailView.Quantity; //(short) casts the int down to what the db is expecting 
             detail.Discount = orderDetailView.Discount;
             detail.RemoveFromViewFlag = orderDetailView.RemoveFromViewFlag;
             // after opriperties seted i add or update depends on the case 
+            subTotal += detail.UnitPrice * detail.Quantity;
             if (isNew)
             {
                 order.OrderDetails.Add(detail);
@@ -1230,50 +1249,29 @@ public class OrderService
 
 
         }
+        tax = subTotal * 0.05m;
+        // adding or Update the order
+        if (order.OrderID == 0)
+        {
+            _context.Orders.Add(order);
+        }
+        else
+        {
+            _context.Orders.Update(order);
+        }
 
-        //i Should add the for each here 
+        // single SaveChanges
+        try
+        {
+            _context.SaveChanges();
+        }
+        catch
+        {
+            _context.ChangeTracker.Clear();
+            throw;
+        }
 
-
-        //    public class OrderView
-        //{
-        //    public int OrderID { get; set; }
-        //    public string CustomerID { get; set; }
-        //    public string CompanyName { get; set; }
-        //    public int EmployeeID { get; set; }
-    //    public string EmployeeName { get; set; }
-    //    public DateTime? OrderDate { get; set; }
-    //    public DateTime? RequiredDate { get; set; }
-    //    public DateTime? ShippedDate { get; set; }
-    //    public int ShipVia { get; set; }
-    //    public decimal? Freight { get; set; }
-    //    public string ShipName { get; set; }
-    //    public string ShipAddress { get; set; }
-    //    public string ShipCity { get; set; }
-    //    public string ShipRegion { get; set; }
-    //    public string ShipPostalCode { get; set; }
-    //    public string ShipCountry { get; set; }
-    //    public List<OrderDetailView> OrderDetails { get; set; } = new List<OrderDetailView>();
-    //    public decimal? SubTotal { get; set; }
-    //    public decimal? Tax { get; set; }
-    //    public bool RemoveFromViewFlag { get; set; }
-    //}
-
-    //public class OrderDetailView
-    //{
-    //    public int OrderDetailID { get; set; }
-    //    public int OrderID { get; set; }
-    //    public int ProductID { get; set; }
-    //    public string Name { get; set; }
-    //    public decimal? UnitPrice { get; set; }
-    //    public int Quantity { get; set; }
-    //    public Single Discount { get; set; }
-    //    public int UnitsInStock { get; set; }
-    //    public bool RemoveFromViewFlag { get; set; }
-
-
-    //}
-
-//return result;
+        return result.WithValue(GetOrder(order.OrderID).Value);
 
 }
 
