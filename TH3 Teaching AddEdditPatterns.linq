@@ -1078,6 +1078,45 @@ public class OrderService
         }
 
         // === PHASE 2: Order Line Validation ===
+        foreach (var orderDetail in orderView.OrderDetails)
+        {
+            //rule 5 ProductID check
+            if (orderDetail.ProductID == 0)
+            {
+                return result.AddError(new Error("Missing Information", "Missing product ID."));
+            }
+            //rule 6 unit price must be no negative and return productName 
+            string productName = _context.Products
+                        .Where(p => p.ProductID == orderDetail.ProductID)
+                        .Select(p => p.ProductName).FirstOrDefault();
+            if (orderDetail.UnitPrice < 0)
+            {
+                result.AddError(new Error("Invalid Data", $"Product {productName} has a price that is less than zero."));
+            }
+            if (orderDetail.Quantity < 1)
+            {
+                result.AddError(new Error("Invalid Data", $"Product {productName} has a quantity that is less than one."));
+            }
+            
+        }
+
+        //Rule 8 no duplicate products across order lines 
+        
+               var duplicateOrders = orderView.OrderDetails
+                        .GroupBy(od => od.ProductID)
+                        .Where(g => g.Count() > 1);
+                        
+        foreach (var duplicateOrder in duplicateOrders)
+        {
+            var productName = _context.Products 
+                .Where(p => p.ProductID == duplicateOrder.Key)
+                .Select(p => p.ProductName)
+                .FirstOrDefault();
+                
+            result.AddError(new Error("Invalid Data", $"Product {productName} can only be added to the order lines once."));
+        }     
+                   
+                    
 
         // === PHASE 3: Order Processing ===
 
